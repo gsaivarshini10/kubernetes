@@ -22,7 +22,7 @@ pipeline {
             steps {
                 echo "📤 Pushing image..."
                 withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-creds',
+                    credentialsId: 'dockerhub',
                     usernameVariable: 'U',
                     passwordVariable: 'P'
                 )]) {
