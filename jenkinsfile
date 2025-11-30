@@ -2,6 +2,8 @@ pipeline {
     agent any
     environment {
         IMG = "gsaivarshini10/abc"
+        DEPLOY = "flask-deployment"
+        CONT = "flask"
     }
 
     stages {
@@ -13,19 +15,33 @@ pipeline {
 
         stage('Push') {
             steps {
-                withCredentials([usernamePassword(credentialsId:'dockerhub-creds', usernameVariable:'U', passwordVariable:'P')]) {
-                    bat """
-                        echo %P% | docker login -u %U% --password-stdin
-                        docker push %IMG%:%BUILD_NUMBER%
-                    """
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'U',
+                    passwordVariable: 'P'
+                )]) {
+                    bat "echo %P% | docker login -u %U% --password-stdin"
+                    bat "docker push %IMG%:%BUILD_NUMBER%"
                 }
             }
         }
 
         stage('Deploy') {
             steps {
-                bat "kubectl set image deployment/flask-deployment flask=%IMG%:%BUILD_NUMBER%"
+                bat "kubectl set image deployment/%DEPLOY% %CONT%=%IMG%:%BUILD_NUMBER%"
+                bat "kubectl rollout restart deployment/%DEPLOY%"
+                bat "kubectl rollout status deployment/%DEPLOY%"
             }
         }
     }
+
+    post {
+        success {
+            echo "🚀 Successfully deployed image: gsaivarshini10/abc:${BUILD_NUMBER}"
+        }
+        failure {
+            echo "❌ Deployment failed. Check error logs."
+        }
+    }
 }
+
