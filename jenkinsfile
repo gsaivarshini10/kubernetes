@@ -1,69 +1,31 @@
 pipeline {
     agent any
-
     environment {
-        DOCKER_IMAGE = "gsaivarshini10/abc"
-        K8S_DEPLOYMENT = "flask-deployment"
-        K8S_CONTAINER = "flask"
+        IMG = "gsaivarshini10/abc"
     }
 
     stages {
-        stage('Checkout') {
+        stage('Build') {
             steps {
-                checkout scm    // Jenkins will pull from Git repo configured in the job
+                bat "docker build -t %IMG%:%BUILD_NUMBER% ."
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Push') {
             steps {
-                sh """
-                  docker build -t ${DOCKER_IMAGE}:${BUILD_NUMBER} .
-                """
-            }
-        }
-
-        stage('Login to Docker Hub') {
-            steps {
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub-creds',
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    sh """
-                      echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
+                withCredentials([usernamePassword(credentialsId:'dockerhub-creds', usernameVariable:'U', passwordVariable:'P')]) {
+                    bat """
+                        echo %P% | docker login -u %U% --password-stdin
+                        docker push %IMG%:%BUILD_NUMBER%
                     """
                 }
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Deploy') {
             steps {
-                sh """
-                  docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}
-                """
+                bat "kubectl set image deployment/flask-deployment flask=%IMG%:%BUILD_NUMBER%"
             }
-        }
-
-        stage('Deploy to Kubernetes') {
-            steps {
-                sh """
-                  # Update deployment image
-                  kubectl set image deployment/${K8S_DEPLOYMENT} \
-                    ${K8S_CONTAINER}=${DOCKER_IMAGE}:${BUILD_NUMBER} --record
-
-                  # Wait for rollout to finish
-                  kubectl rollout status deployment/${K8S_DEPLOYMENT}
-                """
-            }
-        }
-    }
-
-    post {
-        failure {
-            echo "Build or deployment failed!"
-        }
-        success {
-            echo "Deployment successful! Image: ${DOCKER_IMAGE}:${BUILD_NUMBER}"
         }
     }
 }
