@@ -2,54 +2,75 @@ pipeline {
     agent any
 
     environment {
-        IMG = "gsaivarshini10/abc"      // Docker Hub repository
-        DEPLOY = "flask-deployment"     // Kubernetes deployment name
-        CONT = "flask"                  // Container name inside deployment
+        DOCKER_IMAGE = "gsaivarshini10/myapp"
+        KUBECONFIG_PATH = "C:\\jenkins\\kubeconfig"   // Change path if needed
     }
 
     stages {
 
-        stage('Build Docker Image') {
+        stage('Checkout') {
             steps {
-                echo "🔨 Building docker image..."
-                bat """
-                    docker build -t %IMG%:%BUILD_NUMBER% .
-                """
+                git branch: 'master',
+                    url: 'https://github.com/gsaivarshini10/docker-jenkins-ci.git'
             }
         }
 
-        stage('Push to Docker Hub') {
+        stage('Build Docker Image') {
             steps {
-                echo "📤 Pushing image..."
-                withCredentials([usernamePassword(
-                    credentialsId: 'dockerhub',
-                    usernameVariable: 'U',
-                    passwordVariable: 'P'
-                )]) {
-                    bat "echo %P% | docker login -u %U% --password-stdin"
-                    bat "docker push %IMG%:%BUILD_NUMBER%"
+                bat "docker build -t %DOCKER_IMAGE% ."
+            }
+        }
+
+        stage('Login to Docker Hub') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub',
+                                                  usernameVariable: 'DOCKERHUB_USER',
+                                                  passwordVariable: 'DOCKERHUB_PASS')]) {
+                    bat """
+                    echo %DOCKERHUB_PASS% | docker login -u %DOCKERHUB_USER% --password-stdin
+                    """
                 }
+            }
+        }
+
+        stage('Push Image to Docker Hub') {
+            steps {
+                bat "docker push %DOCKER_IMAGE%"
             }
         }
 
         stage('Deploy to Kubernetes') {
             steps {
-                echo "🚀 Updating Kubernetes deployment..."
-                bat """
-                    kubectl set image deployment/%DEPLOY% %CONT%=%IMG%:%BUILD_NUMBER%
-                    kubectl rollout restart deployment/%DEPLOY%
-                    kubectl rollout status deployment/%DEPLOY%
-                """
+                withCredentials([
+                    file(credentialsId: 'kubeconfig_cred', variable: 'KUBECONFIG_FILE')
+                ]) {
+                    bat """
+                    echo Using kubeconfig: %KUBECONFIG_FILE%
+                    set KUBECONFIG=%KUBECONFIG_FILE%
+
+                    kubectl apply -f deployment.yaml
+                    kubectl apply -f service.yaml
+
+                    kubectl get pods
+                    kubectl get svc
+                    """
+                }
+            }
+        }
+
+        stage('Cleanup') {
+            steps {
+                bat "docker logout"
             }
         }
     }
 
     post {
         success {
-            echo "✅ Successfully deployed: %IMG%:%BUILD_NUMBER%"
+            echo "🚀 Successfully deployed to Kubernetes!"
         }
         failure {
-            echo "❌ Deployment failed. Check Jenkins logs."
+            echo "❌ Pipeline failed. Check logs."
         }
     }
 }
